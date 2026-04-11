@@ -17,9 +17,10 @@ COPY --from=license-check /license-check /usr/bin/
 
 WORKDIR /go/src/github.com/openfaas/faas/gateway
 
-COPY vendor         vendor
 COPY go.mod         go.mod
 COPY go.sum         go.sum
+
+RUN go mod download
 
 COPY handlers       handlers
 COPY metrics        metrics
@@ -34,9 +35,9 @@ COPY main.go        .
 
 RUN license-check -path ./ --verbose=false "Alex Ellis" "OpenFaaS Authors" "OpenFaaS Author(s)"
 
-# Run a gofmt and exclude all vendored code.
-RUN test -z "$(gofmt -l $(find . -type f -name '*.go' -not -path "./vendor/*"))"
-RUN go test $(go list ./... | grep -v integration | grep -v /vendor/ | grep -v /template/) -cover
+# Run gofmt checks for all Go source files.
+RUN test -z "$(gofmt -l $(find . -type f -name '*.go'))"
+RUN go test $(go list ./... | grep -v integration | grep -v /template/) -cover
 
 RUN CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build --ldflags "-s -w \
     -X \"github.com/openfaas/faas/gateway/version.GitCommitSHA=${GIT_COMMIT}\" \
@@ -78,4 +79,3 @@ RUN chown -R app:app ./
 USER app
 
 CMD ["./gateway"]
-
