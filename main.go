@@ -234,29 +234,13 @@ func main() {
 		r.HandleFunc("/async-function/{name:["+NameExpression+"]+}/{params:.*}", faasHandlers.QueuedProxy).Methods(http.MethodPost)
 	}
 
-	fs := http.FileServer(http.Dir("./assets/"))
-
-	// This URL allows access from the UI to the OpenFaaS store
-	allowedCORSHost := "raw.githubusercontent.com"
-	fsCORS := handlers.DecorateWithCORS(fs, allowedCORSHost)
-
-	uiHandler := http.StripPrefix("/ui", fsCORS)
-	if credentials != nil {
-		r.PathPrefix("/ui/").Handler(
-			auth.DecorateWithBasicAuth(uiHandler.ServeHTTP, credentials)).
-			Methods(http.MethodGet)
-	} else {
-		r.PathPrefix("/ui/").Handler(uiHandler).
-			Methods(http.MethodGet)
-	}
-
 	//Start metrics server in a goroutine
 	go runMetricsServer()
 
 	r.HandleFunc("/healthz",
 		handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)).Methods(http.MethodGet)
 
-	r.Handle("/", http.RedirectHandler("/ui/", http.StatusTemporaryRedirect)).Methods(http.MethodGet)
+	r.HandleFunc("/", handlers.HealthzHandler).Methods(http.MethodGet)
 
 	tcpPort := 8080
 

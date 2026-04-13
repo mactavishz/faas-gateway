@@ -7,6 +7,18 @@ SERVER?=ttl.sh
 OWNER?=openfaas
 NAME=gateway
 
+.PHONY: dist-local
+dist-local:
+	CGO_ENABLED=0 go build -o bin/faasd-gateway
+
+.PHONY: install
+install: dist-local
+	# Install faasd-gateway binary
+	echo "Installing new faasd-gateway binary..."
+	sudo rm -f /usr/local/bin/faasd-gateway
+	sudo cp bin/faasd-gateway /usr/local/bin/faasd-gateway
+	sudo chmod +x /usr/local/bin/faasd-gateway
+
 .PHONY: buildx-local
 buildx-local:
 	@echo $(SERVER)/$(OWNER)/$(NAME):$(TAG) \

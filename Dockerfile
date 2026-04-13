@@ -68,11 +68,6 @@ ENV http_proxy=""
 ENV https_proxy=""
 
 COPY --from=build /go/src/github.com/openfaas/faas/gateway/gateway    .
-COPY assets     assets
-
-ARG TARGETPLATFORM
-
-RUN if [ "$TARGETPLATFORM" = "linux/arm/v7" ] ; then sed -ie s/x86_64/armhf/g assets/script/funcstore.js ; elif [ "$TARGETPLATFORM" = "linux/arm64" ] ; then sed -ie s/x86_64/arm64/g assets/script/funcstore.js; fi
 
 RUN chown -R app:app ./
 
