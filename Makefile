@@ -9,7 +9,7 @@ NAME=gateway
 
 .PHONY: dist-local
 dist-local:
-	CGO_ENABLED=0 go build -o bin/faasd-gateway
+	CGO_ENABLED=0 go build -buildvcs=false -o bin/faasd-gateway
 
 .PHONY: install
 install: dist-local
