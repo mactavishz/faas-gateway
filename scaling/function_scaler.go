@@ -89,12 +89,15 @@ func (f *FunctionScaler) Scale(functionName, namespace string) FunctionScaleResu
 	queryResponse := res.(ServiceQueryResponse)
 	f.Cache.Set(functionName, namespace, queryResponse)
 
-	// If the desired replica count is 0, then a scale up event
-	// is required.
-	if queryResponse.Replicas == 0 {
-		minReplicas := uint64(1)
-		if queryResponse.MinReplicas > 0 {
-			minReplicas = queryResponse.MinReplicas
+	// Under unified desired/available semantics, scale-up should happen whenever
+	// available replicas are 0. Desired replicas are used as the target when set.
+	if queryResponse.AvailableReplicas == 0 {
+		targetReplicas := queryResponse.Replicas
+		if targetReplicas == 0 {
+			targetReplicas = uint64(1)
+			if queryResponse.MinReplicas > 0 {
+				targetReplicas = queryResponse.MinReplicas
+			}
 		}
 
 		// In a retry-loop, first query desired replicas, then
@@ -113,9 +116,9 @@ func (f *FunctionScaler) Scale(functionName, namespace string) FunctionScaleResu
 			queryResponse = res.(ServiceQueryResponse)
 			f.Cache.Set(functionName, namespace, queryResponse)
 
-			// The scale up is complete because the desired replica count
-			// has been set to 1 or more.
-			if queryResponse.Replicas > 0 {
+			// If the function became available while polling, no scale request
+			// is needed. Readiness is still confirmed in the polling loop below.
+			if queryResponse.AvailableReplicas > 0 {
 				return nil
 			}
 
@@ -124,10 +127,10 @@ func (f *FunctionScaler) Scale(functionName, namespace string) FunctionScaleResu
 
 			if _, err, _ := f.SingleFlight.Do(setKey, func() (interface{}, error) {
 
-				log.Printf("[Scale %d/%d] function=%s 0 => %d requested",
-					attempt, int(f.Config.SetScaleRetries), functionName, minReplicas)
+				log.Printf("[Scale %d/%d] function=%s 0 available => %d requested",
+					attempt, int(f.Config.SetScaleRetries), functionName, targetReplicas)
 
-				if err := f.Config.ServiceQuery.SetReplicas(functionName, namespace, minReplicas); err != nil {
+				if err := f.Config.ServiceQuery.SetReplicas(functionName, namespace, targetReplicas); err != nil {
 					return nil, fmt.Errorf("unable to scale function [%s], err: %s", functionName, err)
 				}
 				return nil, nil
