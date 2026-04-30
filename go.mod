@@ -37,4 +37,4 @@ require (
 	google.golang.org/protobuf v1.36.8 // indirect
 )
 
-// replace github.com/openfaas/faas-provider => ../../faas-provider
+replace github.com/openfaas/faas-provider => ../faas-provider
