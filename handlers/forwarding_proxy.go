@@ -78,15 +78,28 @@ func buildUpstreamRequest(r *http.Request, baseURL string, requestURL string) *h
 		upstreamReq.Header["X-Forwarded-Host"] = []string{r.Host}
 	}
 
-	if upstreamReq.Header.Get("X-Forwarded-For") == "" {
-		upstreamReq.Header["X-Forwarded-For"] = []string{r.RemoteAddr}
-	}
+	appendXForwardedFor(upstreamReq.Header, r.RemoteAddr)
 
 	if r.Body != nil {
 		upstreamReq.Body = r.Body
 	}
 
 	return upstreamReq
+}
+
+func appendXForwardedFor(header http.Header, remoteAddr string) {
+	remoteAddr = strings.TrimSpace(remoteAddr)
+	if remoteAddr == "" {
+		return
+	}
+
+	current := strings.TrimSpace(header.Get("X-Forwarded-For"))
+	if current == "" {
+		header.Set("X-Forwarded-For", remoteAddr)
+		return
+	}
+
+	header.Set("X-Forwarded-For", current+", "+remoteAddr)
 }
 
 func forwardRequest(w http.ResponseWriter,

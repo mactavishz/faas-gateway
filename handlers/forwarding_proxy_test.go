@@ -128,6 +128,24 @@ func Test_buildUpstreamRequest_XForwardedHostHeader_WhenAlreadyPresent(t *testin
 	}
 }
 
+func Test_buildUpstreamRequest_AppendsXForwardedForWhenPresent(t *testing.T) {
+	request, err := http.NewRequest(http.MethodPost, "/function/test", bytes.NewReader([]byte("hello")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request.RemoteAddr = "10.62.0.42:39818"
+	request.Header.Set("X-Forwarded-For", "203.0.113.10")
+
+	upstream := buildUpstreamRequest(request, "http://faasd-provider:8081", "/function/test")
+
+	got := upstream.Header.Get("X-Forwarded-For")
+	want := "203.0.113.10, 10.62.0.42:39818"
+	if got != want {
+		t.Fatalf("X-Forwarded-For - want: %s, got: %s", want, got)
+	}
+}
+
 func Test_getServiceName(t *testing.T) {
 	scenarios := []struct {
 		name        string
