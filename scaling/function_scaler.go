@@ -193,7 +193,7 @@ func (f *FunctionScaler) Scale(functionName, namespace string) FunctionScaleResu
 
 	return FunctionScaleResult{
 		Error:     nil,
-		Available: true,
+		Available: false,
 		Found:     true,
 		Duration:  time.Since(start),
 	}

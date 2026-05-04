@@ -135,6 +135,7 @@ func main() {
 
 	faasHandlers.NamespaceListerHandler = handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)
 	faasHandlers.NamespaceMutatorHandler = handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)
+	callgraphHandler := handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)
 
 	faasHandlers.Alert = handlers.MakeNotifierWrapper(
 		handlers.MakeAlertHandler(externalServiceQuery, config.Namespace),
@@ -200,6 +201,8 @@ func main() {
 			auth.DecorateWithBasicAuth(faasHandlers.NamespaceListerHandler, credentials)
 		faasHandlers.NamespaceMutatorHandler =
 			auth.DecorateWithBasicAuth(faasHandlers.NamespaceMutatorHandler, credentials)
+		callgraphHandler =
+			auth.DecorateWithBasicAuth(callgraphHandler, credentials)
 	}
 
 	r := mux.NewRouter()
@@ -227,6 +230,9 @@ func main() {
 	r.HandleFunc("/system/namespaces", faasHandlers.NamespaceListerHandler).Methods(http.MethodGet)
 	r.HandleFunc("/system/namespace/{namespace:["+NameExpression+"]*}", faasHandlers.NamespaceMutatorHandler).
 		Methods(http.MethodPost, http.MethodDelete, http.MethodPut, http.MethodGet)
+	r.HandleFunc("/system/callgraph", callgraphHandler).Methods(http.MethodGet)
+	r.HandleFunc("/system/callgraph/function/{name:["+NameExpression+"]+}", callgraphHandler).Methods(http.MethodGet)
+	r.HandleFunc("/system/callgraph/edge", callgraphHandler).Methods(http.MethodGet)
 
 	if faasHandlers.QueuedProxy != nil {
 		r.HandleFunc("/async-function/{name:["+NameExpression+"]+}/", faasHandlers.QueuedProxy).Methods(http.MethodPost)
