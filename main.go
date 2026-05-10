@@ -127,6 +127,7 @@ func main() {
 	faasHandlers.DeleteFunction = handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)
 	faasHandlers.UpdateFunction = handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)
 	faasHandlers.FunctionStatus = handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)
+	faasHandlers.FunctionStats = handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)
 
 	faasHandlers.InfoHandler = handlers.MakeInfoHandler(handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector))
 	faasHandlers.TelemetryHandler = handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, nil)
@@ -191,6 +192,8 @@ func main() {
 			auth.DecorateWithBasicAuth(faasHandlers.ScaleFunction, credentials)
 		faasHandlers.FunctionStatus =
 			auth.DecorateWithBasicAuth(faasHandlers.FunctionStatus, credentials)
+		faasHandlers.FunctionStats =
+			auth.DecorateWithBasicAuth(faasHandlers.FunctionStats, credentials)
 		faasHandlers.InfoHandler =
 			auth.DecorateWithBasicAuth(faasHandlers.InfoHandler, credentials)
 		faasHandlers.SecretHandler =
@@ -205,6 +208,26 @@ func main() {
 			auth.DecorateWithBasicAuth(callgraphHandler, credentials)
 	}
 
+	r := newRouter(faasHandlers, functionProxy, callgraphHandler,
+		handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector))
+
+	//Start metrics server in a goroutine
+	go runMetricsServer()
+
+	tcpPort := 8080
+
+	s := &http.Server{
+		Addr:           fmt.Sprintf(":%d", tcpPort),
+		ReadTimeout:    config.ReadTimeout,
+		WriteTimeout:   config.WriteTimeout,
+		MaxHeaderBytes: http.DefaultMaxHeaderBytes, // 1MB - can be overridden by setting Server.MaxHeaderBytes.
+		Handler:        r,
+	}
+
+	log.Fatal(s.ListenAndServe())
+}
+
+func newRouter(faasHandlers types.HandlerSet, functionProxy http.HandlerFunc, callgraphHandler http.HandlerFunc, healthzHandler http.HandlerFunc) *mux.Router {
 	r := mux.NewRouter()
 	// max wait time to start a function = maxPollCount * functionPollInterval
 
@@ -218,6 +241,7 @@ func main() {
 	r.HandleFunc("/system/alert", faasHandlers.Alert).Methods(http.MethodPost)
 
 	r.HandleFunc("/system/function/{name:["+NameExpression+"]+}", faasHandlers.FunctionStatus).Methods(http.MethodGet)
+	r.HandleFunc("/system/stats/function/{name:["+NameExpression+"]+}", faasHandlers.FunctionStats).Methods(http.MethodGet)
 	r.HandleFunc("/system/functions", faasHandlers.ListFunctions).Methods(http.MethodGet)
 	r.HandleFunc("/system/functions", faasHandlers.DeployFunction).Methods(http.MethodPost)
 	r.HandleFunc("/system/functions", faasHandlers.DeleteFunction).Methods(http.MethodDelete)
@@ -240,25 +264,10 @@ func main() {
 		r.HandleFunc("/async-function/{name:["+NameExpression+"]+}/{params:.*}", faasHandlers.QueuedProxy).Methods(http.MethodPost)
 	}
 
-	//Start metrics server in a goroutine
-	go runMetricsServer()
-
-	r.HandleFunc("/healthz",
-		handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)).Methods(http.MethodGet)
-
+	r.HandleFunc("/healthz", healthzHandler).Methods(http.MethodGet)
 	r.HandleFunc("/", handlers.HealthzHandler).Methods(http.MethodGet)
 
-	tcpPort := 8080
-
-	s := &http.Server{
-		Addr:           fmt.Sprintf(":%d", tcpPort),
-		ReadTimeout:    config.ReadTimeout,
-		WriteTimeout:   config.WriteTimeout,
-		MaxHeaderBytes: http.DefaultMaxHeaderBytes, // 1MB - can be overridden by setting Server.MaxHeaderBytes.
-		Handler:        r,
-	}
-
-	log.Fatal(s.ListenAndServe())
+	return r
 }
 
 // runMetricsServer Listen on a separate HTTP port for Prometheus metrics to keep this accessible from

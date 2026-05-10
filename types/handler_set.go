@@ -25,6 +25,9 @@ type HandlerSet struct {
 	// FunctionStatus returns the status of an already deployed function
 	FunctionStatus http.HandlerFunc
 
+	// FunctionStats returns invocation stats for a deployed function
+	FunctionStats http.HandlerFunc
+
 	// QueuedProxy queue work and return synchronous response
 	QueuedProxy http.HandlerFunc
 
