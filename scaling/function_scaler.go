@@ -11,9 +11,8 @@ import (
 
 // NewFunctionScaler create a new scaler with the specified
 // ScalingConfig
-func NewFunctionScaler(config ScalingConfig, functionCacher FunctionCacher) FunctionScaler {
+func NewFunctionScaler(config ScalingConfig) FunctionScaler {
 	return FunctionScaler{
-		Cache:        functionCacher,
 		Config:       config,
 		SingleFlight: &singleflight.Group{},
 	}
@@ -21,7 +20,6 @@ func NewFunctionScaler(config ScalingConfig, functionCacher FunctionCacher) Func
 
 // FunctionScaler scales from zero
 type FunctionScaler struct {
-	Cache        FunctionCacher
 	Config       ScalingConfig
 	SingleFlight *singleflight.Group
 }
@@ -39,20 +37,6 @@ type FunctionScaleResult struct {
 func (f *FunctionScaler) Scale(functionName, namespace string) FunctionScaleResult {
 	start := time.Now()
 
-	// First check the cache, if there are available replicas, then the
-	// request can be served.
-	if cachedResponse, hit := f.Cache.Get(functionName, namespace); hit &&
-		cachedResponse.AvailableReplicas > 0 {
-		return FunctionScaleResult{
-			Error:     nil,
-			Available: true,
-			Found:     true,
-			Duration:  time.Since(start),
-		}
-	}
-
-	// The wasn't a hit, or there were no available replicas found
-	// so query the live endpoint
 	getKey := fmt.Sprintf("GetReplicas-%s.%s", functionName, namespace)
 	res, err, _ := f.SingleFlight.Do(getKey, func() (interface{}, error) {
 		return f.Config.ServiceQuery.GetReplicas(functionName, namespace)
@@ -85,9 +69,7 @@ func (f *FunctionScaler) Scale(functionName, namespace string) FunctionScaleResu
 		}
 	}
 
-	// Store the result of GetReplicas in the cache
 	queryResponse := res.(ServiceQueryResponse)
-	f.Cache.Set(functionName, namespace, queryResponse)
 
 	// Under unified desired/available semantics, scale-up should happen whenever
 	// available replicas are 0. Desired replicas are used as the target when set.
@@ -112,9 +94,7 @@ func (f *FunctionScaler) Scale(functionName, namespace string) FunctionScaleResu
 				return err
 			}
 
-			// Cache the response
 			queryResponse = res.(ServiceQueryResponse)
-			f.Cache.Set(functionName, namespace, queryResponse)
 
 			// If the function became available while polling, no scale request
 			// is needed. Readiness is still confirmed in the polling loop below.
@@ -159,11 +139,6 @@ func (f *FunctionScaler) Scale(functionName, namespace string) FunctionScaleResu
 		res, err, _ := f.SingleFlight.Do(getKey, func() (interface{}, error) {
 			return f.Config.ServiceQuery.GetReplicas(functionName, namespace)
 		})
-		queryResponse := res.(ServiceQueryResponse)
-
-		if err == nil {
-			f.Cache.Set(functionName, namespace, queryResponse)
-		}
 
 		totalTime := time.Since(start)
 
@@ -175,6 +150,7 @@ func (f *FunctionScaler) Scale(functionName, namespace string) FunctionScaleResu
 				Duration:  totalTime,
 			}
 		}
+		queryResponse := res.(ServiceQueryResponse)
 
 		if queryResponse.AvailableReplicas > 0 {
 

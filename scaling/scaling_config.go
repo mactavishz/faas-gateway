@@ -13,9 +13,6 @@ type ScalingConfig struct {
 	// readiness status
 	FunctionPollInterval time.Duration
 
-	// CacheExpiry life-time for a cache entry before considering invalid
-	CacheExpiry time.Duration
-
 	// ServiceQuery queries available/ready replicas for function
 	ServiceQuery ServiceQuery
 

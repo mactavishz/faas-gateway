@@ -110,13 +110,10 @@ func main() {
 		MaxPollCount:         uint(1000),
 		SetScaleRetries:      uint(20),
 		FunctionPollInterval: time.Millisecond * 100,
-		CacheExpiry:          time.Millisecond * 250, // freshness of replica values before going stale
 		ServiceQuery:         externalServiceQuery,
 	}
 
-	// This cache can be used to query a function's annotations.
-	functionAnnotationCache := scaling.NewFunctionCache(scalingConfig.CacheExpiry)
-	cachedFunctionQuery := scaling.NewCachedFunctionQuery(functionAnnotationCache, externalServiceQuery)
+	functionQuery := scaling.NewDirectFunctionQuery(externalServiceQuery)
 
 	faasHandlers.Proxy = handlers.MakeCallIDMiddleware(
 		handlers.MakeForwardingProxyHandler(reverseProxy, functionNotifiers, functionURLResolver, functionURLTransformer, nil),
@@ -148,8 +145,7 @@ func main() {
 	functionProxy := faasHandlers.Proxy
 
 	if config.ScaleFromZero {
-		scalingFunctionCache := scaling.NewFunctionCache(scalingConfig.CacheExpiry)
-		scaler := scaling.NewFunctionScaler(scalingConfig, scalingFunctionCache)
+		scaler := scaling.NewFunctionScaler(scalingConfig)
 		functionProxy = handlers.MakeScalingHandler(functionProxy, scaler, scalingConfig, config.Namespace)
 	}
 
@@ -168,7 +164,7 @@ func main() {
 		}
 
 		faasHandlers.QueuedProxy = handlers.MakeNotifierWrapper(
-			handlers.MakeCallIDMiddleware(handlers.MakeQueuedProxy(metricsOptions, natsQueue, trimURLTransformer, config.Namespace, cachedFunctionQuery)),
+			handlers.MakeCallIDMiddleware(handlers.MakeQueuedProxy(metricsOptions, natsQueue, trimURLTransformer, config.Namespace, functionQuery)),
 			forwardingNotifiers,
 		)
 	}
