@@ -40,12 +40,13 @@ func main() {
 	}
 
 	fmt.Printf("OpenFaaS Gateway - Community Edition (CE)\n"+
-		"\nVersion: %s Commit: %s\nTimeouts: read=%s\twrite=%s\tupstream=%s\nFunction provider: %s\n\n",
+		"\nVersion: %s Commit: %s\nTimeouts: read=%s\twrite=%s\tupstream=%s\tarchive_upload=%s\nFunction provider: %s\n\n",
 		version.BuildVersion(),
 		version.GitCommitSHA,
 		config.ReadTimeout,
 		config.WriteTimeout,
 		config.UpstreamTimeout,
+		config.ArchiveUploadTimeout,
 		config.FunctionsProviderURL)
 
 	// credentials is used for service-to-service auth
@@ -120,9 +121,9 @@ func main() {
 	)
 
 	faasHandlers.ListFunctions = handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)
-	faasHandlers.DeployFunction = handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)
+	faasHandlers.DeployFunction = handlers.MakeArchiveUploadForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector, config.ArchiveUploadTimeout)
 	faasHandlers.DeleteFunction = handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)
-	faasHandlers.UpdateFunction = handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)
+	faasHandlers.UpdateFunction = handlers.MakeArchiveUploadForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector, config.ArchiveUploadTimeout)
 	faasHandlers.FunctionStatus = handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)
 	faasHandlers.FunctionStats = handlers.MakeForwardingProxyHandler(reverseProxy, forwardingNotifiers, urlResolver, nilURLTransformer, serviceAuthInjector)
 

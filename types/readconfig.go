@@ -65,6 +65,7 @@ func (ReadConfig) Read(hasEnv HasEnv) (*GatewayConfig, error) {
 	cfg.ReadTimeout = parseIntOrDurationValue(hasEnv.Getenv("read_timeout"), defaultDuration)
 	cfg.WriteTimeout = parseIntOrDurationValue(hasEnv.Getenv("write_timeout"), defaultDuration)
 	cfg.UpstreamTimeout = parseIntOrDurationValue(hasEnv.Getenv("upstream_timeout"), defaultDuration)
+	cfg.ArchiveUploadTimeout = parseIntOrDurationValue(hasEnv.Getenv("archive_upload_timeout"), time.Minute*10+time.Second*5)
 
 	if len(hasEnv.Getenv("functions_provider_url")) > 0 {
 		var err error
@@ -181,6 +182,9 @@ type GatewayConfig struct {
 
 	// UpstreamTimeout maximum duration of HTTP call to upstream URL
 	UpstreamTimeout time.Duration
+
+	// ArchiveUploadTimeout maximum duration for archive-backed function deploy uploads.
+	ArchiveUploadTimeout time.Duration
 
 	// URL for alternate functions provider.
 	FunctionsProviderURL *url.URL

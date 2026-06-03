@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"os"
@@ -22,6 +23,8 @@ import (
 	"github.com/openfaas/faas/gateway/pkg/middleware"
 	"github.com/openfaas/faas/gateway/types"
 )
+
+type upstreamErrorResponse func(err error, timeout time.Duration) (int, string)
 
 // MakeForwardingProxyHandler create a handler which forwards HTTP requests
 func MakeForwardingProxyHandler(proxy *types.HTTPClientReverseProxy,
@@ -60,6 +63,88 @@ func MakeForwardingProxyHandler(proxy *types.HTTPClientReverseProxy,
 			notifier.Notify(r.Method, requestURL, originalURL, statusCode, "completed", seconds)
 		}
 	}
+}
+
+// MakeArchiveUploadForwardingProxyHandler forwards function deploy requests and
+// applies a longer timeout only for multipart archive uploads.
+func MakeArchiveUploadForwardingProxyHandler(proxy *types.HTTPClientReverseProxy,
+	notifiers []HTTPNotifier,
+	baseURLResolver middleware.BaseURLResolver,
+	urlPathTransformer middleware.URLPathTransformer,
+	serviceAuthInjector middleware.AuthInjector,
+	archiveUploadTimeout time.Duration) http.HandlerFunc {
+
+	writeRequestURI := false
+	if _, exists := os.LookupEnv("write_request_uri"); exists {
+		writeRequestURI = exists
+	}
+
+	reverseProxy := makeRewriteProxy(baseURLResolver, urlPathTransformer)
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		baseURL := baseURLResolver.Resolve(r)
+		originalURL := r.URL.String()
+		requestURL := urlPathTransformer.Transform(r)
+		timeout := proxy.Timeout
+		var errorResponse upstreamErrorResponse
+
+		if isArchiveUploadRequest(r, requestURL) {
+			timeout = archiveUploadTimeout
+			errorResponse = archiveUploadErrorResponse
+			extendRequestDeadlines(w, timeout)
+		}
+
+		for _, notifier := range notifiers {
+			notifier.Notify(r.Method, requestURL, originalURL, http.StatusProcessing, "started", time.Second*0)
+		}
+
+		start := time.Now()
+
+		statusCode, err := forwardRequestWithErrorResponse(w, r, proxy.Client, baseURL, requestURL, timeout, writeRequestURI, serviceAuthInjector, reverseProxy, errorResponse)
+		if err != nil {
+			log.Printf("error with upstream request to: %s, %s\n", requestURL, err.Error())
+		}
+
+		seconds := time.Since(start)
+
+		for _, notifier := range notifiers {
+			notifier.Notify(r.Method, requestURL, originalURL, statusCode, "completed", seconds)
+		}
+	}
+}
+
+func isArchiveUploadRequest(r *http.Request, requestURL string) bool {
+	if requestURL != "/system/functions" {
+		return false
+	}
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		return false
+	}
+	return strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data")
+}
+
+func extendRequestDeadlines(w http.ResponseWriter, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	controller := http.NewResponseController(w)
+	_ = controller.SetReadDeadline(deadline)
+	_ = controller.SetWriteDeadline(deadline)
+}
+
+func archiveUploadErrorResponse(err error, timeout time.Duration) (int, string) {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
+		return http.StatusGatewayTimeout, fmt.Sprintf("archive upload timed out after %s while forwarding to provider\n", timeout)
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return http.StatusGatewayTimeout, fmt.Sprintf("archive upload timed out after %s while forwarding to provider\n", timeout)
+	}
+
+	if errors.Is(err, context.Canceled) || strings.Contains(strings.ToLower(err.Error()), "context canceled") {
+		return http.StatusBadRequest, "archive upload was interrupted before the provider received the full multipart body\n"
+	}
+
+	return http.StatusBadGateway, fmt.Sprintf("archive upload failed while forwarding to provider: %s\n", err.Error())
 }
 
 func buildUpstreamRequest(r *http.Request, baseURL string, requestURL string) *http.Request {
@@ -111,6 +196,19 @@ func forwardRequest(w http.ResponseWriter,
 	writeRequestURI bool,
 	serviceAuthInjector middleware.AuthInjector,
 	reverseProxy *httputil.ReverseProxy) (int, error) {
+	return forwardRequestWithErrorResponse(w, r, proxyClient, baseURL, requestURL, timeout, writeRequestURI, serviceAuthInjector, reverseProxy, nil)
+}
+
+func forwardRequestWithErrorResponse(w http.ResponseWriter,
+	r *http.Request,
+	proxyClient *http.Client,
+	baseURL string,
+	requestURL string,
+	timeout time.Duration,
+	writeRequestURI bool,
+	serviceAuthInjector middleware.AuthInjector,
+	reverseProxy *httputil.ReverseProxy,
+	errorResponse upstreamErrorResponse) (int, error) {
 
 	if r.Body != nil {
 		defer r.Body.Close()
@@ -137,7 +235,14 @@ func forwardRequest(w http.ResponseWriter,
 	res, err := proxyClient.Do(upstreamReq.WithContext(ctx))
 	if err != nil {
 		badStatus := http.StatusBadGateway
+		body := ""
+		if errorResponse != nil {
+			badStatus, body = errorResponse(err, timeout)
+		}
 		w.WriteHeader(badStatus)
+		if body != "" {
+			_, _ = io.WriteString(w, body)
+		}
 		return badStatus, err
 	}
 

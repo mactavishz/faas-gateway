@@ -121,6 +121,12 @@ func TestRead_EmptyTimeoutConfig(t *testing.T) {
 	if got != want {
 		t.Fatalf("config.WriteTimeout want: %s, but got: %s", want, got)
 	}
+
+	want = time.Minute*10 + time.Second*5
+	got = config.ArchiveUploadTimeout
+	if got != want {
+		t.Fatalf("config.ArchiveUploadTimeout want: %s, but got: %s", want, got)
+	}
 }
 
 func TestRead_ReadAndWriteTimeoutConfig(t *testing.T) {
@@ -156,6 +162,18 @@ func TestRead_ReadAndWriteTimeoutDurationConfig(t *testing.T) {
 	if (config.WriteTimeout) != time.Duration(90)*time.Second {
 		t.Logf("WriteTimeout incorrect, got: %d\n", config.WriteTimeout)
 		t.Fail()
+	}
+}
+
+func TestRead_ArchiveUploadTimeoutDurationConfig(t *testing.T) {
+	defaults := NewEnvBucket()
+	defaults.Setenv("archive_upload_timeout", "3m15s")
+
+	readConfig := ReadConfig{}
+	config, _ := readConfig.Read(defaults)
+
+	if config.ArchiveUploadTimeout != time.Duration(195)*time.Second {
+		t.Fatalf("ArchiveUploadTimeout incorrect, got: %s", config.ArchiveUploadTimeout)
 	}
 }
 
