@@ -116,6 +116,23 @@ func TestSetReplicasNonExistentFn(t *testing.T) {
 	}
 }
 
+func TestSetReplicasProviderConnectionError(t *testing.T) {
+	testServer := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		res.WriteHeader(http.StatusOK)
+	}))
+	serverURL := testServer.URL
+	testServer.Close()
+
+	var injector middleware.AuthInjector
+	url, _ := url.Parse(serverURL + "/")
+	esq := NewExternalServiceQuery(*url, injector)
+
+	err := esq.SetReplicas("figlet", "", 1)
+	if err == nil {
+		t.Fatal("expected connection error from closed provider server")
+	}
+}
+
 func TestSetReplicasExistentFn(t *testing.T) {
 
 	testServer := httptest.NewServer(

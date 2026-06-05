@@ -164,10 +164,13 @@ func (s ExternalServiceQuery) SetReplicas(serviceName, serviceNamespace string, 
 
 	if err != nil {
 		log.Println(urlPath, err)
-	} else {
-		if res.Body != nil {
-			defer res.Body.Close()
-		}
+		return err
+	}
+	if res == nil {
+		return fmt.Errorf("empty response scaling %s", urlPath)
+	}
+	if res.Body != nil {
+		defer res.Body.Close()
 	}
 
 	if !(res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted) {
