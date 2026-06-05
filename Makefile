@@ -53,3 +53,7 @@ buildx-push-all:
 generate:
 	rm models/model_*.go || true
 	openapi-generator-go generate models -s api-docs/spec.openapi.yml -o models --package-name models
+
+.PHONY: test
+test:
+	go test -v ./...
