@@ -150,6 +150,12 @@ func main() {
 		functionProxy = handlers.MakeScalingHandler(functionProxy, scaler, scalingConfig, config.Namespace)
 	}
 
+	// Stamp the gateway arrival time before scale-from-zero so the provider can
+	// record a clean caller->call-issue gap (independent of the callee's cold
+	// start). Async invocations reach the provider via the queue worker's sync
+	// re-invoke through this same path, so this covers them too.
+	functionProxy = handlers.MakeArrivalStampMiddleware(functionProxy)
+
 	if config.UseNATS() {
 		log.Println("Async enabled: Using NATS Streaming")
 		log.Println("Deprecation Notice: NATS Streaming is no longer maintained and won't receive updates from June 2023")
